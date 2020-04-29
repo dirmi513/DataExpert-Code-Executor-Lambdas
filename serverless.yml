@@ -1,0 +1,20 @@
+service: user-code-executor
+
+provider:
+  name: aws
+  runtime: python3.6
+  region: us-east-1
+  role: arn:aws:iam::948804166772:role/lambda-code-executor
+
+functions:
+  code_executor:
+    handler: handler.lambda_handler
+    layers:
+      - arn:aws:lambda:us-east-1:948804166772:layer:dataexpert-layer:2
+    memorySize: 512     
+    timeout: 15
+
+package:
+  exclude:
+    - node_modules/**
+    - venv/**
