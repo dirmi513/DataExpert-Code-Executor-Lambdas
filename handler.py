@@ -9,8 +9,8 @@ import re
 import boto3
 import pandas as pd
 import numpy as np
-import matplotlib
-
+import matplotlib 
+import re 
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -37,25 +37,40 @@ def execute_code(code):
     """
     variables =  {}
     error = False 
+    old_stderr = sys.stderr
     old_stdout = sys.stdout
     redirected_output = sys.stdout = StringIO()
     try:
-        exec(code, variables)  # read up on global and local vars
-    except SyntaxError as err:
-        error_class = err.__class__.__name__
-        detail = err.args[0]
-        line_number = err.lineno
-        error = True 
-    except Exception as err:
-        error = err 
-        error_class = err.__class__.__name__
-        detail = err.args[0]
+        exec(code, variables) 
+    except SyntaxError as e:
+        redirected_error = sys.stderr = StringIO()
         cl, exc, tb = sys.exc_info()
-        line_number = tb.tb_next.tb_lineno  # read up on this
+        traceback.print_exception(cl, exc, tb)
+        traceback_output = redirected_error.getvalue()
+        traceback_output = traceback_output[re.search(r'File "<string>"', traceback_output).start():]
+        traceback_output = 'Traceback (most recent call last):\n  ' + traceback_output.replace('<string>', 'script.py')
+        error = True
+    except Exception as e:  
+        code_list = code.split('\n') 
+        traceback_output = 'Traceback (most recent call last):\n'
+        error_class = e.__class__.__name__
+        detail = e.args[0] 
+        cl, exc, tb = sys.exc_info()   
+        tb = tb.tb_next 
+        tracebacks = traceback.extract_tb(tb)  
+        for frame in tracebacks:
+            traceback_str = f'  File "script.py", line {frame.lineno}, in {frame.name}\n'
+            code_line = '    ' + code_list[frame.lineno - 1].strip() + '\n'
+            traceback_output += traceback_str + code_line
+        traceback_output += '\n' + error_class + ': ' + detail
         error = True 
     sys.stdout = old_stdout 
+    sys.stderr = old_stderr  
     if error:
-        return f'{error_class} at line {line_number}: {detail}', False 
+        logger.info(traceback_output)
+        traceback_output = traceback_output.replace('<', '&lt;').replace('>', '&gt;')
+        traceback_output = '<pre class="traceback-output">' + traceback_output + '</pre>' 
+        return traceback_output, False 
     return variables, redirected_output
 
 
@@ -312,4 +327,4 @@ def lambda_handler(event, context):
             output_dic['cls'] = _cls
         else:
             output_dic['correct_answer'] = 'F' 
-    return output_dic
+    return output_dic 
