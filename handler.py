@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 import matplotlib 
 import re 
+import os 
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -284,6 +285,24 @@ def parse_local_vars(local_vars, output_string, answer_dic):
     return output_string, answer_dic
 
 
+def upload_correct_answer_to_s3(_cls, answer_dic):
+    """Uploads the correct answer for the slide to dataexpert.correct.answers S3 bucket.
+
+    Args:
+        _cls: The courseLessonSlide combo integer.
+        answer_dic: Dictionary containing all variables and output of
+            the correct answer.
+    """
+    json_file = f'{_cls}.json'
+    file_path = os.path.join('/tmp/', json_file)
+    with open(file_path, 'w') as f:
+        json.dump(answer_dic, f) 
+     
+    correct_answer_bucket = 'dataexpert.correct.answers'
+    s3 = boto3.client('s3') 
+    s3.upload_file(Filename=file_path, Bucket=correct_answer_bucket, Key=json_file)
+
+
 def lambda_handler(event, context):
     """Executes client's code and returns the output in HTML format.
 
@@ -295,7 +314,8 @@ def lambda_handler(event, context):
         The results of the code execution as a dictionary (if 
         there are no errors), or string (if errors) in HTML format.
     """
-    code, grade_answer, _cls = event["code"], event['grade'], event['cls']
+    code, grade_answer, _cls = event['code'], event['grade'], event['cls']
+    submit_correct_answer = event['submit_correct_answer']
     output_dic, answer_dic = {}, {} 
     output_string = '' 
     output_title = '<p class="code-output-title">Output</p>' 
@@ -320,6 +340,13 @@ def lambda_handler(event, context):
     output_string, answer_dic =  parse_local_vars(client_variables, output_string, answer_dic)
     logger.info('Code variable declarations parsed.')
     output_dic['output_code'] = output_string
+    if submit_correct_answer == 'T':
+        try:
+            upload_correct_answer_to_s3(_cls, answer_dic)
+            return {'Status': 'Success'}
+        except Exception as e:
+            logger.info(f'There was an error uploading the correct answer to S3: {e}')
+            return {'Status': 'Error'}
     if grade_answer == 'T':
         correct_answer = s3_download_correct_answer(_cls)
         if answer_dic == correct_answer:
